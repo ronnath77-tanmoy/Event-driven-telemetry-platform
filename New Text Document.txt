@@ -1,0 +1,6 @@
+1. for client role verification which method will be better for this phase: 
+a. where user themselves select the roles when login 
+b. we verify ourselves during login
+c. do you wnat to keep it even more simple and no different roles for now
+2. how should we do schema validation before sending events to kafka i suggest we should make a different file to contain the logic for user verification, note the telemetry data then use the logic in the file to make the data into json formats and send them as events to kafka
+do not make any md file i suggest we discuss phase 1 thoroughly first  
