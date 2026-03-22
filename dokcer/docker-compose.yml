@@ -9,7 +9,7 @@ services:
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -26,7 +26,9 @@ services:
     image: mongo:6.0
     container_name: mongodb
     ports:
-      - "27017:27017"
+      - "27018:27017"
+    volumes:
+      - mongo-data:/data/db
 
   redis:
     image: redis:7
@@ -34,5 +36,68 @@ services:
     ports:
       - "6379:6379"
 
+  app:
+    build:
+      context: ..
+      dockerfile: dokcer/Dockerfile
+    container_name: telemetry-app
+    ports:
+      - "8000:8000"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MONGODB_URI: mongodb://mongodb:27017
+      # If your Redis usage expects a specific env var name, adjust it here.
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      NEW_RELIC_CONFIG_FILE: /app/newrelic.ini
+      NEW_RELIC_ENV: production
+    depends_on:
+      - kafka
+      - mongodb
+      - redis
+
+  mongodb-consumer:
+    build:
+      context: ..
+      dockerfile: consumer/Dockerfile
+    container_name: mongodb-consumer
+    restart: unless-stopped
+    working_dir: /consumer/mongodb_consumer
+    command: ["python", "consumer.py"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: telemetry.events
+      KAFKA_CONSUMER_GROUP: mongodb-writer
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: telemetry
+      MONGODB_COLLECTION: events
+    depends_on:
+      - kafka
+      - mongodb
+
+  redis-consumer:
+    build:
+      context: ..
+      dockerfile: consumer/Dockerfile
+    container_name: redis-consumer
+    restart: unless-stopped
+    working_dir: /consumer/redis_consumer
+    command: ["python", "consumer.py"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: telemetry.events
+      KAFKA_CONSUMER_GROUP: redis-metrics
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      ACTIVE_USERS_TTL: "300"
+      USER_LAST_SEEN_TTL: "300"
+    depends_on:
+      - kafka
+      - redis
+
 volumes:
   kafka-data:
+  mongo-data:
