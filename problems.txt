@@ -1,0 +1,80 @@
+================================================================================
+TELEMETRY PLATFORM — TRACKED PROBLEMS & OPEN QUESTIONS
+================================================================================
+Consolidated from project notes and development history (Windows / Docker / WSL).
+
+--------------------------------------------------------------------------------
+PHASE 1 — PRODUCT & DESIGN (from planning notes)
+--------------------------------------------------------------------------------
+
+1. Client role verification — which approach is best for this phase?
+   a) Users select roles themselves at login
+   b) We assign/verify roles during login
+   c) Keep it simpler: no distinct roles for now
+
+2. Schema validation before Kafka — how should we structure it?
+   Suggestion discussed: separate module for user verification + telemetry shaping,
+   then build JSON events and send to Kafka. Discuss phase 1 in detail before
+   heavy implementation.
+
+--------------------------------------------------------------------------------
+WINDOWS / WSL HOST DEVELOPMENT (not Linux container)
+--------------------------------------------------------------------------------
+
+3. New Relic on Windows — `newrelic-admin` imports Unix-only `pwd`; fails on
+   native Windows. Linux Docker image avoids this.
+
+4. Uvicorn multi-worker on Windows — `WinError 10022` / socket-sharing issues with
+   `--workers`. Multi-worker is normal inside a Linux container.
+
+5. Ubuntu WSL — `venv` / `ensurepip` can break if host Python packages are
+   incomplete; Docker image Python is self-contained and avoids host Python.
+
+6. Missing or incomplete project-level `requirements.txt` was a blocker; root
+   and service-specific requirements should be maintained.
+
+--------------------------------------------------------------------------------
+DOCKER & BUILD
+--------------------------------------------------------------------------------
+
+7. Dockerfile `COPY` — must have two arguments (source and destination). A
+   single-argument `COPY` is invalid and breaks the build.
+
+--------------------------------------------------------------------------------
+KAFKA — BROKER, TOPICS, CLIENTS
+--------------------------------------------------------------------------------
+
+8. Topic missing — with `KAFKA_AUTO_CREATE_TOPICS_ENABLE=false`, topics like
+   `telemetry.events` must be created explicitly or production fails with
+   UnknownTopicOrPartition.
+
+9. Advertised listeners mismatch — if Kafka advertises `PLAINTEXT://localhost:9092`,
+   clients inside other containers get broker metadata pointing at their own
+   `localhost`, not the broker. Internal clients usually need advertised
+   address `kafka:9092` (or dual listeners for host + Docker).
+
+10. Host-based consumers vs Docker — bootstrap `localhost:9092` from the host can
+    work for initial connect, but metadata may return `kafka:9092`, which does not
+    resolve on the Windows host. Fix: run consumers on the Compose network with
+    `KAFKA_BOOTSTRAP_SERVERS=kafka:9092`, or configure listeners/metadata so host
+    clients see a resolvable address.
+
+--------------------------------------------------------------------------------
+DATA & OBSERVABILITY
+--------------------------------------------------------------------------------
+
+11. MongoDB port collision — local MongoDB on 27017 vs Docker-mapped port can make
+    tools like Compass show empty data while `docker exec` shows documents. Align
+    connection string with the published container port (e.g. 27018).
+
+12. Kafka at-least-once delivery — duplicate events possible; idempotency via
+    `event_id` and consumer-side dedup / Mongo upserts (see high-level design).
+
+13. New Relic APM vs Infrastructure — APM data comes from the agent inside the
+    app process; host Infrastructure view may not show the containerized app as a
+    familiar process name. Startup failures (e.g. Kafka not ready) reduce visible
+    APM traffic.
+
+================================================================================
+END
+================================================================================
